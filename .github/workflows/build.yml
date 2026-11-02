@@ -54,6 +54,8 @@ jobs:
           # Fix adsp include paths for mt6877 (uses mt6853 code)
           echo 'subdir-ccflags-y += -Idrivers/misc/mediatek/adsp/mt6853' >> drivers/misc/mediatek/adsp/common_v2/Makefile
           echo 'subdir-ccflags-y += -Idrivers/misc/mediatek/adsp/include' >> drivers/misc/mediatek/adsp/common_v2/Makefile
+          # Fix audio_dsp include paths (angled includes not found)
+          echo 'ccflags-y += -Isound/soc/mediatek/audio_dsp' >> sound/soc/mediatek/audio_dsp/v2/Makefile
           DEFCONFIG=arch/arm64/configs/ruby_defconfig
           python3 - "$DEFCONFIG" <<'PY'
           import sys
