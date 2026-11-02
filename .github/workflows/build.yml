@@ -1,0 +1,93 @@
+name: Build Kernel (KSU + Droidspaces)
+on:
+  workflow_dispatch:
+    inputs:
+      ksu_branch:
+        description: KSU branch
+        default: next
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git curl ca-certificates python3 build-essential bc bison flex \
+            libssl-dev libelf-dev dwarves cpio kmod wget gzip xz-utils clang lld llvm
+          clang --version
+          make --version | head -1
+
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: RubyxLabs/android_kernel_xiaomi_mt6877
+          ref: lineage-24.0
+          path: kernel
+
+      - name: Setup KSU-Next
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s next
+
+      - name: Apply Droidspaces kABI patch
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+          curl -LSs -o /tmp/ds.patch "https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch"
+          patch -p1 < /tmp/ds.patch
+
+      - name: Configure Droidspaces + KSU
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+          DEFCONFIG=arch/arm64/configs/gki_defconfig
+          python3 - "$DEFCONFIG" <<'PY'
+          import sys
+          p=sys.argv[1]
+          s=open(p).read()
+          opts=[
+          "CONFIG_SYSVIPC","CONFIG_POSIX_MQUEUE","CONFIG_IPC_NS","CONFIG_PID_NS",
+          "CONFIG_DEVTMPFS","CONFIG_NETFILTER_XT_MATCH_ADDRTYPE","CONFIG_USER_NS",
+          "CONFIG_IP6_NF_NAT","CONFIG_IP6_NF_TARGET_MASQUERADE","CONFIG_MACVLAN",
+          "CONFIG_NETFILTER_XT_TARGET_REJECT","CONFIG_NETFILTER_XT_TARGET_LOG",
+          "CONFIG_NETFILTER_XT_MATCH_RECENT","CONFIG_IP_SET","CONFIG_IP_SET_HASH_IP",
+          "CONFIG_IP_SET_HASH_NET","CONFIG_NETFILTER_XT_SET","CONFIG_TMPFS_POSIX_ACL",
+          "CONFIG_TMPFS_XATTR","CONFIG_UTS_NS","CONFIG_SECCOMP","CONFIG_SECCOMP_FILTER",
+          "CONFIG_CGROUP_DEVICE","CONFIG_FAIR_GROUP_SCHED","CONFIG_CGROUP_NET_PRIO",
+          "CONFIG_MEMCG","CONFIG_MEMCG_SWAP","CONFIG_OVERLAY_FS","CONFIG_NET_NS",
+          "CONFIG_VETH","CONFIG_BRIDGE","CONFIG_NETFILTER","CONFIG_BRIDGE_NETFILTER",
+          "CONFIG_NETFILTER_ADVANCED","CONFIG_NF_CONNTRACK","CONFIG_IP_NF_IPTABLES",
+          "CONFIG_IP_NF_FILTER","CONFIG_NF_NAT","CONFIG_NF_TABLES","CONFIG_IP_NF_TARGET_MASQUERADE",
+          "CONFIG_NETFILTER_XT_TARGET_MASQUERADE","CONFIG_NETFILTER_XT_TARGET_TCPMSS",
+          "CONFIG_NF_CONNTRACK_NETLINK","CONFIG_NF_NAT_REDIRECT",
+          "CONFIG_IP_ADVANCED_ROUTER","CONFIG_IP_MULTIPLE_TABLES","CONFIG_IPV6","CONFIG_IPV6_MULTIPLE_TABLES",
+          "CONFIG_IP6_NF_IPTABLES","CONFIG_IP6_NF_FILTER","CONFIG_IP6_NF_MANGLE",
+          "CONFIG_KSU",
+          ]
+          for o in opts:
+              s=s.replace(f"# {o} is not set", f"{o}=y")
+          for o in opts:
+              if (o+"=y\n" not in s) and (o+"=m\n" not in s):
+                  s+="\n"+o+"=y\n"
+          open(p,"w").write(s)
+          PY
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+          export ARCH=arm64
+          export LLVM=1
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make gki_defconfig
+          make -j$(nproc) Image
+
+      - name: Upload kernel Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image
+          path: kernel/arch/arm64/boot/Image
