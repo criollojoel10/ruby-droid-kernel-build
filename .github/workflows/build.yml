@@ -51,11 +51,12 @@ jobs:
         working-directory: kernel
         run: |
           set -euxo pipefail
-          # Fix adsp include paths for mt6877 (uses mt6853 code)
-          echo 'ccflags-y += -Idrivers/misc/mediatek/adsp/mt6853' >> drivers/misc/mediatek/adsp/common_v2/Makefile
-          echo 'ccflags-y += -Idrivers/misc/mediatek/adsp/include' >> drivers/misc/mediatek/adsp/common_v2/Makefile
-          # Fix audio_dsp include paths (angled includes not found)
-          echo 'ccflags-y += -Isound/soc/mediatek/audio_dsp' >> sound/soc/mediatek/audio_dsp/v2/Makefile
+          # Fix adsp include paths: change angled include to relative quoted include
+          sed -i 's/#include <adsp_helper.h>/#include "..\/include\/adsp_helper.h"/' drivers/misc/mediatek/adsp/common_v2/adsp_core.h
+          # Fix audio_dsp include paths: change angled includes to relative quoted includes
+          sed -i 's/#include <mtk-dsp-mem-control.h>/#include "..\/mtk-dsp-mem-control.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
+          sed -i 's/#include <mtk-base-dsp.h>/#include "..\/mtk-base-dsp.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
+          sed -i 's/#include <mtk-dsp-common.h>/#include "..\/mtk-dsp-common.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
           DEFCONFIG=arch/arm64/configs/ruby_defconfig
           python3 - "$DEFCONFIG" <<'PY'
           import sys
