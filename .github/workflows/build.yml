@@ -1,5 +1,5 @@
 name: Build Kernel (KSU + Droidspaces)
-on:
+'on':
   push:
     branches: [master]
   workflow_dispatch:
@@ -15,9 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            git curl ca-certificates python3 build-essential bc bison flex \
-            libssl-dev libelf-dev dwarves cpio kmod wget gzip xz-utils clang lld llvm ccache
+          sudo apt-get install -y --no-install-recommends             git curl ca-certificates python3 build-essential bc bison flex             libssl-dev libelf-dev dwarves cpio kmod wget gzip xz-utils clang lld llvm ccache
           clang --version
           make --version | head -1
 
@@ -53,75 +51,20 @@ jobs:
         working-directory: kernel
         run: |
           set -euxo pipefail
-          # Fix include paths by copying headers to source directories
-          # and changing angled brackets to quotes using Python
-          python3 << 'PYEOF'
-import os, re, shutil
-
-# 1. Copy headers to source directories
-copies = [
-    ('drivers/misc/mediatek/adsp/include/adsp_helper.h', 'drivers/misc/mediatek/adsp/common_v2/adsp_helper.h'),
-    ('sound/soc/mediatek/audio_dsp/mtk-dsp-mem-control.h', 'sound/soc/mediatek/audio_dsp/v2/mtk-dsp-mem-control.h'),
-    ('sound/soc/mediatek/audio_dsp/mtk-base-dsp.h', 'sound/soc/mediatek/audio_dsp/v2/mtk-base-dsp.h'),
-    ('sound/soc/mediatek/audio_dsp/mtk-dsp-common.h', 'sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.h'),
-]
-for src, dst in copies:
-    if os.path.exists(src):
-        shutil.copy2(src, dst)
-        print(f'Copied {src} -> {dst}')
-    else:
-        print(f'WARNING: {src} not found')
-
-# 2. Change angled includes to quoted includes using regex
-files_to_fix = [
-    'drivers/misc/mediatek/adsp/common_v2/adsp_core.h',
-    'sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c',
-]
-for f in files_to_fix:
-    if os.path.exists(f):
-        content = open(f).read()
-        # Replace any #include <X.h> with #include "X.h"
-        new_content = re.sub(r'#include\s*<([^>]+)>', r'#include "\1"', content)
-        open(f, 'w').write(new_content)
-        print(f'Fixed includes in {f}')
-        # Show what changed
-        for line in new_content.split(chr(10)):
-            if 'include' in line and ('adsp_helper' in line or 'mtk-dsp' in line or 'mtk-base-dsp' in line or 'mtk-dsp-common' in line):
-                print(f'  {line}')
-PYEOF
+          cp drivers/misc/mediatek/adsp/include/adsp_helper.h drivers/misc/mediatek/adsp/common_v2/adsp_helper.h
+          cp sound/soc/mediatek/audio_dsp/mtk-dsp-mem-control.h sound/soc/mediatek/audio_dsp/v2/mtk-dsp-mem-control.h
+          cp sound/soc/mediatek/audio_dsp/mtk-base-dsp.h sound/soc/mediatek/audio_dsp/v2/mtk-base-dsp.h
+          cp sound/soc/mediatek/audio_dsp/mtk-dsp-common.h sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.h
+          sed -i 's/#include <adsp_helper.h>/#include "adsp_helper.h"/' drivers/misc/mediatek/adsp/common_v2/adsp_core.h
+          sed -i 's/#include <mtk-dsp-mem-control.h>/#include "mtk-dsp-mem-control.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
+          sed -i 's/#include <mtk-base-dsp.h>/#include "mtk-base-dsp.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
+          sed -i 's/#include <mtk-dsp-common.h>/#include "mtk-dsp-common.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
+          echo "=== adsp_core.h ==="
+          grep -n 'adsp_helper' drivers/misc/mediatek/adsp/common_v2/adsp_core.h
+          echo "=== audio_dsp ==="
+          grep -n 'mtk-dsp|mtk-base-dsp' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
           DEFCONFIG=arch/arm64/configs/ruby_defconfig
-          python3 - "$DEFCONFIG" <<'PY'
-          import sys
-          p=sys.argv[1]
-          s=open(p).read()
-          opts=[
-          "CONFIG_SYSVIPC","CONFIG_POSIX_MQUEUE","CONFIG_IPC_NS","CONFIG_PID_NS",
-          "CONFIG_DEVTMPFS","CONFIG_NETFILTER_XT_MATCH_ADDRTYPE","CONFIG_USER_NS",
-          "CONFIG_IP6_NF_NAT","CONFIG_IP6_NF_TARGET_MASQUERADE","CONFIG_MACVLAN",
-          "CONFIG_NETFILTER_XT_TARGET_REJECT","CONFIG_NETFILTER_XT_TARGET_LOG",
-          "CONFIG_NETFILTER_XT_MATCH_RECENT","CONFIG_IP_SET","CONFIG_IP_SET_HASH_IP",
-          "CONFIG_IP_SET_HASH_NET","CONFIG_NETFILTER_XT_SET","CONFIG_TMPFS_POSIX_ACL",
-          "CONFIG_TMPFS_XATTR","CONFIG_UTS_NS","CONFIG_SECCOMP","CONFIG_SECCOMP_FILTER",
-          "CONFIG_CGROUP_DEVICE","CONFIG_FAIR_GROUP_SCHED","CONFIG_CGROUP_NET_PRIO",
-          "CONFIG_MEMCG","CONFIG_MEMCG_SWAP","CONFIG_OVERLAY_FS","CONFIG_NET_NS",
-          "CONFIG_VETH","CONFIG_BRIDGE","CONFIG_NETFILTER","CONFIG_BRIDGE_NETFILTER",
-          "CONFIG_NETFILTER_ADVANCED","CONFIG_NF_CONNTRACK","CONFIG_IP_NF_IPTABLES",
-          "CONFIG_IP_NF_FILTER","CONFIG_NF_NAT","CONFIG_NF_TABLES","CONFIG_IP_NF_TARGET_MASQUERADE",
-          "CONFIG_NETFILTER_XT_TARGET_MASQUERADE","CONFIG_NETFILTER_XT_TARGET_TCPMSS",
-          "CONFIG_NF_CONNTRACK_NETLINK","CONFIG_NF_NAT_REDIRECT",
-          "CONFIG_IP_ADVANCED_ROUTER","CONFIG_IP_MULTIPLE_TABLES","CONFIG_IPV6","CONFIG_IPV6_MULTIPLE_TABLES",
-          "CONFIG_IP6_NF_IPTABLES","CONFIG_IP6_NF_FILTER","CONFIG_IP6_NF_MANGLE",
-          "CONFIG_KSU",
-          "CONFIG_NET_NS","CONFIG_EXT4_FS","CONFIG_BLK_DEV_LOOP","CONFIG_FUSE_FS","CONFIG_TUN",
-          "CONFIG_MEMCG_SWAP","CONFIG_CGROUP_CPUACCT","CONFIG_VETH","CONFIG_BRIDGE","CONFIG_OVERLAY_FS",
-          ]
-          for o in opts:
-              s=s.replace(f"# {o} is not set", f"{o}=y")
-          for o in opts:
-              if (o+"=y\n" not in s) and (o+"=m\n" not in s):
-                  s+="\n"+o+"=y\n"
-          open(p,"w").write(s)
-          PY
+          sed -i 's/# CONFIG_SYSVIPC is not set/CONFIG_SYSVIPC=y/'           sed -i 's/# CONFIG_POSIX_MQUEUE is not set/CONFIG_POSIX_MQUEUE=y/'           sed -i 's/# CONFIG_IPC_NS is not set/CONFIG_IPC_NS=y/'           sed -i 's/# CONFIG_PID_NS is not set/CONFIG_PID_NS=y/'           sed -i 's/# CONFIG_DEVTMPFS is not set/CONFIG_DEVTMPFS=y/'           sed -i 's/# CONFIG_USER_NS is not set/CONFIG_USER_NS=y/'           sed -i 's/# CONFIG_UTS_NS is not set/CONFIG_UTS_NS=y/'           sed -i 's/# CONFIG_SECCOMP is not set/CONFIG_SECCOMP=y/'           sed -i 's/# CONFIG_SECCOMP_FILTER is not set/CONFIG_SECCOMP_FILTER=y/'           sed -i 's/# CONFIG_MEMCG is not set/CONFIG_MEMCG=y/'           sed -i 's/# CONFIG_MEMCG_SWAP is not set/CONFIG_MEMCG_SWAP=y/'           sed -i 's/# CONFIG_OVERLAY_FS is not set/CONFIG_OVERLAY_FS=y/'           sed -i 's/# CONFIG_NET_NS is not set/CONFIG_NET_NS=y/'           sed -i 's/# CONFIG_VETH is not set/CONFIG_VETH=y/'           sed -i 's/# CONFIG_BRIDGE is not set/CONFIG_BRIDGE=y/'           sed -i 's/# CONFIG_TUN is not set/CONFIG_TUN=y/'           sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/'           sed -i 's/# CONFIG_FUSE_FS is not set/CONFIG_FUSE_FS=y/'           sed -i 's/# CONFIG_BLK_DEV_LOOP is not set/CONFIG_BLK_DEV_LOOP=y/'           sed -i 's/# CONFIG_EXT4_FS is not set/CONFIG_EXT4_FS=y/'           sed -i 's/# CONFIG_IPV6 is not set/CONFIG_IPV6=y/'           sed -i 's/# CONFIG_MACVLAN is not set/CONFIG_MACVLAN=y/'           echo "Defconfig patched"
 
       - name: Build kernel
         working-directory: kernel
@@ -131,12 +74,12 @@ PYEOF
           export LLVM=1
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export CCACHE_DIR=$HOME/.ccache
+          export CCACHE_DIR=/home/joel/.ccache
           ccache -M 2G || true
           export CC="ccache clang"
           export HOSTCC="ccache gcc"
           make ruby_defconfig
-          make -j$(nproc) CC="$CC" HOSTCC="$HOSTCC" Image
+          make -j2 CC="$CC" HOSTCC="$HOSTCC" Image
 
       - name: Upload kernel Image
         uses: actions/upload-artifact@v4
