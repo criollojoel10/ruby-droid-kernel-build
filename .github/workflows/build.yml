@@ -15,7 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             git curl ca-certificates python3 build-essential bc bison flex \
-            libssl-dev libelf-dev dwarves cpio kmod wget gzip xz-utils clang lld llvm
+            libssl-dev libelf-dev dwarves cpio kmod wget gzip xz-utils clang lld llvm ccache
           clang --version
           make --version | head -1
 
@@ -25,6 +25,14 @@ jobs:
           repository: RubyxLabs/android_kernel_xiaomi_mt6877
           ref: lineage-24.0
           path: kernel
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
 
       - name: Setup KSU-Next
         working-directory: kernel
@@ -66,6 +74,8 @@ jobs:
           "CONFIG_IP_ADVANCED_ROUTER","CONFIG_IP_MULTIPLE_TABLES","CONFIG_IPV6","CONFIG_IPV6_MULTIPLE_TABLES",
           "CONFIG_IP6_NF_IPTABLES","CONFIG_IP6_NF_FILTER","CONFIG_IP6_NF_MANGLE",
           "CONFIG_KSU",
+          "CONFIG_NET_NS","CONFIG_EXT4_FS","CONFIG_BLK_DEV_LOOP","CONFIG_FUSE_FS","CONFIG_TUN",
+          "CONFIG_MEMCG_SWAP","CONFIG_CGROUP_CPUACCT","CONFIG_VETH","CONFIG_BRIDGE","CONFIG_OVERLAY_FS",
           ]
           for o in opts:
               s=s.replace(f"# {o} is not set", f"{o}=y")
@@ -83,8 +93,12 @@ jobs:
           export LLVM=1
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=aarch64-linux-gnu-
+          export CCACHE_DIR=$HOME/.ccache
+          ccache -M 2G || true
+          export CC="ccache clang"
+          export HOSTCC="ccache gcc"
           make gki_defconfig
-          make -j$(nproc) Image
+          make -j$(nproc) CC="$CC" HOSTCC="$HOSTCC" Image
 
       - name: Upload kernel Image
         uses: actions/upload-artifact@v4
