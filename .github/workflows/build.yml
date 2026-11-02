@@ -51,10 +51,19 @@ jobs:
         working-directory: kernel
         run: |
           set -euxo pipefail
-          cp drivers/misc/mediatek/adsp/include/adsp_helper.h drivers/misc/mediatek/adsp/common_v2/adsp_helper.h
-          cp sound/soc/mediatek/audio_dsp/mtk-dsp-mem-control.h sound/soc/mediatek/audio_dsp/v2/mtk-dsp-mem-control.h
-          cp sound/soc/mediatek/audio_dsp/mtk-base-dsp.h sound/soc/mediatek/audio_dsp/v2/mtk-base-dsp.h
-          cp sound/soc/mediatek/audio_dsp/mtk-dsp-common.h sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.h
+          # Find and copy missing headers
+          ADSP_HELPER=$(find . -name 'adsp_helper.h' | head -1)
+          echo "Found adsp_helper.h at: $ADSP_HELPER"
+          if [ -n "$ADSP_HELPER" ]; then cp "$ADSP_HELPER" drivers/misc/mediatek/adsp/common_v2/adsp_helper.h; fi
+          MTK_MEM=$(find . -name 'mtk-dsp-mem-control.h' | head -1)
+          echo "Found mtk-dsp-mem-control.h at: $MTK_MEM"
+          if [ -n "$MTK_MEM" ]; then cp "$MTK_MEM" sound/soc/mediatek/audio_dsp/v2/mtk-dsp-mem-control.h; fi
+          MTK_BASE=$(find . -name 'mtk-base-dsp.h' | head -1)
+          echo "Found mtk-base-dsp.h at: $MTK_BASE"
+          if [ -n "$MTK_BASE" ]; then cp "$MTK_BASE" sound/soc/mediatek/audio_dsp/v2/mtk-base-dsp.h; fi
+          MTK_COMMON=$(find . -name 'mtk-dsp-common.h' | head -1)
+          echo "Found mtk-dsp-common.h at: $MTK_COMMON"
+          if [ -n "$MTK_COMMON" ]; then cp "$MTK_COMMON" sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.h; fi
           sed -i 's/#include <adsp_helper.h>/#include "adsp_helper.h"/' drivers/misc/mediatek/adsp/common_v2/adsp_core.h
           sed -i 's/#include <mtk-dsp-mem-control.h>/#include "mtk-dsp-mem-control.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
           sed -i 's/#include <mtk-base-dsp.h>/#include "mtk-base-dsp.h"/' sound/soc/mediatek/audio_dsp/v2/mtk-dsp-common.c
