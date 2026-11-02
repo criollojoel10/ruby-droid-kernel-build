@@ -53,6 +53,7 @@ jobs:
           set -euxo pipefail
           # Fix adsp include paths for mt6877 (uses mt6853 code)
           echo 'subdir-ccflags-y += -Idrivers/misc/mediatek/adsp/mt6853' >> drivers/misc/mediatek/adsp/common_v2/Makefile
+          echo 'subdir-ccflags-y += -Idrivers/misc/mediatek/adsp/include' >> drivers/misc/mediatek/adsp/common_v2/Makefile
           DEFCONFIG=arch/arm64/configs/ruby_defconfig
           python3 - "$DEFCONFIG" <<'PY'
           import sys
