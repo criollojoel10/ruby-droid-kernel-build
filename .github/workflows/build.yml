@@ -1,5 +1,7 @@
 name: Build Kernel (KSU + Droidspaces)
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       ksu_branch:
