@@ -19,13 +19,17 @@ Bootable kernel builds for the **Redmi Note 12 Pro / Pro+ 5G / Discovery Edition
 
 ## Downloads
 
-- **Boot image (flashable)**: https://drive.google.com/open?id=1PdotuRdrOswusBQLQ0FD89mGhaYIFSFj
+- **Stable boot image (no IPv6, boots & works)**: https://drive.google.com/open?id=1daxYcwvcSriJFFwfnTX7pB_unOOdxohl
+- **IPv6 attempt (may not boot on this device yet)**: https://drive.google.com/open?id=1B_hH72YCc4wjLpWRiVTsp3SxXv5Tn1a1
 - **vbmeta (stock)**: https://drive.google.com/open?id=1GTctpuZ6mMH7woC2Wb812jdNtpvpDMfd
-- **Raw Image**: https://drive.google.com/open?id=1PdotuRdrOswusBQLQ0FD89mGhaYIFSFj (see folder `ruby-kernel-ksu-droidspaces`)
+- **Raw Images**: folder `ruby-kernel-ksu-droidspaces` on the same Drive.
 
-The current build enables **IPv6 NAT** (`CONFIG_IP6_NF_NAT=y` and
-`CONFIG_IP6_NF_TARGET_MASQUERADE=y`), so `--net=nat` containers get IPv6 too.
-Build run: https://github.com/criollojoel10/ruby-droid-kernel-build/actions/runs/41656352913
+The stable image has DroidSpaces fully working (IPv4 NAT). IPv6 NAT
+(`CONFIG_IP6_NF_NAT=y` + `CONFIG_IP6_NF_TARGET_MASQUERADE=y`) is enabled in
+the `ipv6` build, but on this device it has not booted reliably yet — likely
+because enabling it shifts exported-symbol CRCs and breaks vendor module
+loading. The stable image is the recommended release.
+Latest deterministic build run: https://github.com/criollojoel10/ruby-droid-kernel-build/actions/runs/41705725283
 
 ## Flashing
 
