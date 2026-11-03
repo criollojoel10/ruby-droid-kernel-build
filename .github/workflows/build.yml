@@ -138,6 +138,26 @@ jobs:
               echo 'ccflags-y += -I$(srctree)/drivers/misc/mediatek/adsp/$(ADSP_PLATFORM)' >> "$A"
           fi
 
+      - name: Vendor missing MTK iommu header
+        working-directory: kernel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          H=drivers/iommu/mtk_iommu_ext.h
+          if [ ! -f "$H" ]; then
+            gh api "repos/crdroidandroid/android_kernel_xiaomi_mt6877/contents/$H?ref=16.0" \
+              --jq '.content' | base64 -d > "$H"
+            echo "vendored $H ($(wc -l < "$H") lines)"
+          fi
+          # mach/mt_iommu.h includes "mtk_iommu_ext.h"; in the vendor layout it lives
+          # in drivers/iommu next to the MTK_IOMMU_V2 driver. This tree ships neither,
+          # so the header also needs the pgtable-ext default its Kconfig would provide.
+          if ! grep -q 'MTK_IOMMU_PGTABLE_EXT' drivers/iommu/Kconfig; then
+            echo 'HEADER_DEFS=-DCONFIG_MTK_IOMMU_PGTABLE_EXT=32' >> "$GITHUB_ENV"
+          fi
+          grep -n 'MTK_IOMMU_PGTABLE_EXT' "$H" || true
+
       - name: Configure (ruby_defconfig + DroidSpaces + KSU)
         working-directory: kernel
         env:
@@ -184,7 +204,7 @@ jobs:
           export ARCH=arm64 LLVM=1
           export CCACHE_DIR=$HOME/.ccache
           ccache -M 3G || true
-          FLAGS="-Wno-error"
+          FLAGS="-Wno-error ${HEADER_DEFS:-}"
           : > include-fixes.log
           ok=0
           df -h / > disk-before.txt || true
