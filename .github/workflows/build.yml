@@ -1,8 +1,6 @@
 name: Build Kernel (KSU-Next + DroidSpaces)
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
     inputs:
       kernel_ref:
