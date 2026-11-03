@@ -34,7 +34,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 300
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -177,14 +177,59 @@ jobs:
           } | tee config-report.txt
           grep -q '^CONFIG_KSU=y' .config || { echo "CONFIG_KSU is not enabled"; exit 1; }
 
-      - name: Build kernel Image
+      - name: Build kernel Image (self-healing includes)
         working-directory: kernel
         run: |
-          set -euo pipefail
+          set -uo pipefail
           export ARCH=arm64 LLVM=1
           export CCACHE_DIR=$HOME/.ccache
           ccache -M 3G || true
-          make -j"$(nproc)" CC="ccache clang" KCFLAGS="-Wno-error" Image 2>&1 | tee build.log
+          FLAGS="-Wno-error"
+          : > include-fixes.log
+          ok=0
+          for attempt in $(seq 1 25); do
+            echo "===== attempt ${attempt}: KCFLAGS='${FLAGS}' ====="
+            if make -j"$(nproc)" CC="ccache clang" KCFLAGS="$FLAGS" Image \
+                 > "build-attempt-${attempt}.log" 2>&1; then
+              ok=1; echo "build succeeded on attempt ${attempt}"; break
+            fi
+            hdrs=$(grep -ohE "fatal error: '[^']+' file not found" "build-attempt-${attempt}.log" \
+                    | sed -E "s/.*'([^']+)'.*/\1/" | sort -u)
+            if [ -z "${hdrs:-}" ]; then
+              echo "::error::build failed without a missing-header diagnostic"
+              tail -n 60 "build-attempt-${attempt}.log"
+              exit 1
+            fi
+            added=0
+            while IFS= read -r hdr; do
+              [ -z "$hdr" ] && continue
+              echo "missing header: ${hdr}"
+              # Prefer a platform directory (mt6853/mt6877) when the name repeats.
+              mapfile -t hits < <(find . -name "$hdr" -not -path './.git/*' -not -path './out/*' 2>/dev/null)
+              if [ "${#hits[@]}" -eq 0 ]; then
+                echo "::error::header '${hdr}' does not exist in the source tree"
+                exit 1
+              fi
+              pick=""
+              for h in "${hits[@]}"; do
+                case "$h" in *mt6853*|*mt6877*) pick=$(dirname "$h"); break;; esac
+              done
+              [ -n "$pick" ] || pick=$(dirname "${hits[0]}")
+              case " $FLAGS " in
+                *" -I$PWD/$pick "*) echo "  already in KCFLAGS: $pick"; continue;;
+              esac
+              FLAGS="$FLAGS -I$PWD/$pick"
+              added=$((added + 1))
+              echo "  adding include dir: $pick" | tee -a include-fixes.log
+            done <<< "$hdrs"
+            if [ "$added" -eq 0 ]; then
+              echo "::error::no new include dir could be added, build is stuck"
+              tail -n 60 "build-attempt-${attempt}.log"
+              exit 1
+            fi
+          done
+          cp "build-attempt-${attempt}.log" build.log
+          [ "$ok" -eq 1 ] || { echo "::error::no green build after ${attempt} attempts"; exit 1; }
           ls -lh arch/arm64/boot/Image
 
       - name: Verify build result
@@ -194,7 +239,7 @@ jobs:
           test -s arch/arm64/boot/Image
           file arch/arm64/boot/Image
           sha256sum arch/arm64/boot/Image | tee Image.sha256
-          grep -cE 'error:' build.log || true
+          echo "include dirs added: $(wc -l < include-fixes.log || echo 0)"
 
       - name: Upload artifacts
         if: always()
@@ -209,3 +254,5 @@ jobs:
             kernel/.config
             kernel/config-report.txt
             kernel/build.log
+            kernel/build-attempt-*.log
+            kernel/include-fixes.log
