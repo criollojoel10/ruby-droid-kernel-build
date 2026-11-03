@@ -1,92 +1,191 @@
-name: Build Kernel (KSU + Droidspaces)
+name: Build Kernel (KSU-Next + DroidSpaces)
+
 on:
   push:
     branches: [master]
   workflow_dispatch:
     inputs:
-      ksu_branch:
-        description: KSU branch
-        default: next
+      kernel_ref:
+        description: 'RubyxLabs/android_kernel_xiaomi_mt6877 ref'
+        default: 'lineage-24.0'
+        required: true
+      ksu_ref:
+        description: 'KernelSU-Next commit/tag/branch (setup.sh arg)'
+        default: 'next'
+        required: true
+      kabi_slots:
+        description: 'DroidSpaces SYSVIPC kABI slot variant (auto = try 6_7_8, 3_4_5, 1_2_3)'
+        default: 'auto'
+        required: true
+      localversion:
+        description: 'CONFIG_LOCALVERSION suffix (empty = kernel default)'
+        default: ''
+        required: false
+
+concurrency:
+  group: kernel-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
     steps:
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends git curl ca-certificates python3 build-essential bc bison flex libssl-dev libelf-dev dwarves cpio kmod wget gzip xz-utils clang lld llvm ccache
-
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
           repository: RubyxLabs/android_kernel_xiaomi_mt6877
-          ref: lineage-24.0
+          ref: ${{ inputs.kernel_ref || 'lineage-24.0' }}
           path: kernel
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc bison flex libssl-dev libelf-dev libncurses-dev \
+            cpio kmod rsync zstd xz-utils gzip python3 perl \
+            git curl ca-certificates dwarves ccache clang lld llvm
+          # LLVM=1 needs unversioned tool names; Ubuntu ships them versioned.
+          for t in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump \
+                   llvm-readelf llvm-readobj llvm-strip llvm-size llvm-strings; do
+            command -v "$t" >/dev/null && continue
+            src=$(ls /usr/lib/llvm-*/bin/"$t" 2>/dev/null | head -n1 || true)
+            if [ -n "$src" ]; then sudo ln -sf "$src" /usr/bin/"$t"; fi
+          done
+          clang --version | head -n1
+          ld.lld --version | head -n1
+          make --version | head -n1
 
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ runner.os }}-${{ github.sha }}
+          key: ccache-kernel-${{ inputs.kernel_ref || 'lineage-24.0' }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.os }}-
+            ccache-kernel-${{ inputs.kernel_ref || 'lineage-24.0' }}-
+            ccache-kernel-
 
-      - name: Setup KSU-Next
+      - name: Setup KernelSU-Next
         working-directory: kernel
+        env:
+          KSU_REF: ${{ inputs.ksu_ref || 'next' }}
         run: |
-          set -euxo pipefail
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash
+          set -euo pipefail
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/${KSU_REF}/kernel/setup.sh" \
+            -o /tmp/ksu-setup.sh
+          bash /tmp/ksu-setup.sh "${KSU_REF}"
+          test -d drivers/kernelsu || { echo "KernelSU tree not linked"; exit 1; }
+          grep -q 'kernelsu' drivers/Makefile
+          grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig
 
-      - name: Apply Droidspaces kABI patch
+      - name: Apply DroidSpaces SYSVIPC kABI patch
         working-directory: kernel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VARIANT: ${{ inputs.kabi_slots || 'auto' }}
         run: |
-          set -euxo pipefail
-          curl -LSs -o /tmp/ds.patch "https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch"
-          patch -p1 < /tmp/ds.patch
-
-      - name: Fix missing headers
-        working-directory: kernel
-        run: |
-          set -euxo pipefail
-          mkdir -p drivers/misc/mediatek/adsp/include sound/soc/mediatek/audio_dsp/v2
-          cp -f drivers/misc/mediatek/adsp/mt6853/*.h drivers/misc/mediatek/adsp/include/ 2>/dev/null || true
-          cp -f drivers/misc/mediatek/adsp/mt6853/*.h drivers/misc/mediatek/adsp/common_v2/ 2>/dev/null || true
-          cp -f drivers/misc/mediatek/adsp/mt6853/*.h drivers/misc/mediatek/adsp/ 2>/dev/null || true
-          cp -f drivers/misc/mediatek/adsp/mt6853/*.c drivers/misc/mediatek/adsp/common_v2/ 2>/dev/null || true
-          cp -f drivers/misc/mediatek/adsp/mt6853/*.h sound/soc/mediatek/audio_dsp/v2/ 2>/dev/null || true
-          cp -f drivers/misc/mediatek/adsp/mt6853/*.h sound/soc/mediatek/audio_dsp/ 2>/dev/null || true
-          find drivers/misc/mediatek/adsp/mt6853 -name '*.h' -exec sh -c 'cp -f "$1" "$(dirname "$1")/../common_v2/$(basename "$1")"' _ {} \; 2>/dev/null || true
-          echo 'subdir-ccflags-y += -Idrivers/misc/mediatek/adsp/mt6853 -Idrivers/misc/mediatek/adsp/common_v2 -Idrivers/misc/mediatek/adsp' >> drivers/misc/mediatek/adsp/common_v2/Makefile
-          echo 'ccflags-y += -Idrivers/misc/mediatek/adsp/mt6853 -Idrivers/misc/mediatek/adsp/common_v2 -Idrivers/misc/mediatek/adsp' >> drivers/misc/mediatek/adsp/Makefile
-          sed -i 's|#include <adsp_helper.h>|#include "adsp_helper.h"|g' drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
-          sed -i 's|#include <adsp_reserved_mem.h>|#include "adsp_reserved_mem.h"|g' drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
-          sed -i 's|#include <mtk-dsp-mem-control.h>|#include "mtk-dsp-mem-control.h"|g' drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
-          sed -i 's|#include <mtk-base-dsp.h>|#include "mtk-base-dsp.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h sound/soc/mediatek/audio_dsp/*.c sound/soc/mediatek/audio_dsp/*.h 2>/dev/null || true
-          sed -i 's|#include <mtk-dsp-common.h>|#include "mtk-dsp-common.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h sound/soc/mediatek/audio_dsp/*.c sound/soc/mediatek/audio_dsp/*.h 2>/dev/null || true
-
-      - name: Configure and build
-        working-directory: kernel
-        run: |
-          set -euxo pipefail
-          export ARCH=arm64
-          export LLVM=1
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CCACHE_DIR=/home/runner/.ccache
-          ccache -M 2G || true
-          export CC="ccache clang"
-          export HOSTCC="ccache gcc"
-          DEFCONFIG=arch/arm64/configs/ruby_defconfig
-          for opt in CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE CONFIG_IPC_NS CONFIG_PID_NS CONFIG_DEVTMPFS CONFIG_USER_NS CONFIG_UTS_NS CONFIG_SECCOMP CONFIG_SECCOMP_FILTER CONFIG_MEMCG CONFIG_MEMCG_SWAP CONFIG_OVERLAY_FS CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE CONFIG_TUN CONFIG_KSU CONFIG_FUSE_FS CONFIG_BLK_DEV_LOOP CONFIG_EXT4_FS CONFIG_IPV6 CONFIG_MACVLAN CONFIG_NETFILTER_XT_MATCH_ADDRTYPE CONFIG_IP6_NF_NAT CONFIG_IP6_NF_TARGET_MASQUERADE CONFIG_NETFILTER_XT_TARGET_REJECT CONFIG_NETFILTER_XT_TARGET_LOG CONFIG_NETFILTER_XT_MATCH_RECENT CONFIG_IP_SET CONFIG_IP_SET_HASH_IP CONFIG_IP_SET_HASH_NET CONFIG_NETFILTER_XT_SET CONFIG_TMPFS_POSIX_ACL CONFIG_TMPFS_XATTR CONFIG_CGROUP_DEVICE CONFIG_CGROUP_SCHED CONFIG_FAIR_GROUP_SCHED CONFIG_CGROUP_FREEZER CONFIG_CGROUP_NET_PRIO; do
-            sed -i "s|# $opt is not set|$opt=y|" "$DEFCONFIG"
-            grep -q "^$opt=" "$DEFCONFIG" || echo "$opt=y" >> "$DEFCONFIG"
+          set -euo pipefail
+          API="repos/ravindu644/Droidspaces-OSS/contents/Documentation/resources/kernel-patches/GKI/below-kernel-6.12"
+          fetch_patch() {
+            local want="$1" sha
+            sha=$(gh api "$API" --jq ".[] | select(.name|test(\"fix_sysvipc_kabi_${want}\")) | .sha")
+            [ -n "$sha" ] || { echo "no blob for slot variant $want"; return 1; }
+            gh api "repos/ravindu644/Droidspaces-OSS/git/blobs/${sha}" --jq .content \
+              | base64 -d > "/tmp/sysvipc-${want}.patch"
+            test -s "/tmp/sysvipc-${want}.patch"
+          }
+          if [ "$VARIANT" = "auto" ]; then CANDIDATES="6_7_8 3_4_5 1_2_3"; else CANDIDATES="$VARIANT"; fi
+          applied=""
+          for v in $CANDIDATES; do
+            [ "$v" = "none" ] && { echo "kABI patch skipped by input"; break; }
+            fetch_patch "$v"
+            if patch -p1 --dry-run -f < "/tmp/sysvipc-${v}.patch" >/dev/null 2>&1; then
+              patch -p1 -f < "/tmp/sysvipc-${v}.patch"
+              applied="$v"
+              echo "applied kABI slot variant $v"
+              break
+            fi
+            echo "variant $v does not apply (dry-run failed)"
           done
-          make ruby_defconfig
-          make -j$(nproc) CC="$CC" HOSTCC="$HOSTCC" Image
+          if [ -z "$applied" ] && [ "$VARIANT" != "none" ]; then
+            echo "::warning::No SYSVIPC kABI variant applied; SYSVIPC would break the GKI ABI"
+          fi
+          echo "KABI_VARIANT=${applied:-none}" >> "$GITHUB_ENV"
 
-      - name: Upload kernel Image
+      - name: Fix same-directory include path for audio_dsp/v2
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          F=sound/soc/mediatek/audio_dsp/v2/Makefile
+          grep -qF 'I$(srctree)/sound/soc/mediatek/audio_dsp/v2' "$F" || \
+            echo 'ccflags-y += -I$(srctree)/sound/soc/mediatek/audio_dsp/v2' >> "$F"
+          tail -n3 "$F"
+
+      - name: Configure (ruby_defconfig + DroidSpaces + KSU)
+        working-directory: kernel
+        env:
+          LOCALVERSION_INPUT: ${{ inputs.localversion }}
+        run: |
+          set -euo pipefail
+          export ARCH=arm64 LLVM=1
+          make ruby_defconfig
+          ./scripts/config --file .config \
+            -e SYSCTL -e SYSVIPC -e POSIX_MQUEUE \
+            -e NAMESPACES -e PID_NS -e UTS_NS -e IPC_NS -e NET_NS -e USER_NS \
+            -e DEVTMPFS -e DEVTMPFS_MOUNT \
+            -e SECCOMP -e SECCOMP_FILTER \
+            -e CGROUPS -e CGROUP_DEVICE -e CGROUP_PIDS -e CGROUP_SCHED \
+            -e FAIR_GROUP_SCHED -e CFS_BANDWIDTH -e MEMCG -e BLK_CGROUP \
+            -e OVERLAY_FS -e TMPFS_XATTR -e TMPFS_POSIX_ACL \
+            -e EXT4_FS_POSIX_ACL -e EXT4_FS_SECURITY \
+            -e VETH -e MACVLAN -e BRIDGE -e BRIDGE_NETFILTER -e TUN \
+            -e KSU -d WERROR
+          if [ -n "${LOCALVERSION_INPUT:-}" ]; then
+            ./scripts/config --file .config --set-str LOCALVERSION "$LOCALVERSION_INPUT"
+          fi
+          make olddefconfig
+
+          {
+            for o in KSU SYSVIPC POSIX_MQUEUE IPC_NS PID_NS USER_NS UTS_NS NET_NS \
+                     DEVTMPFS SECCOMP SECCOMP_FILTER OVERLAY_FS VETH BRIDGE TUN \
+                     MACVLAN CGROUP_DEVICE CGROUP_PIDS CFS_BANDWIDTH MEMCG WERROR; do
+              grep -E "^CONFIG_${o}=" .config || echo "# CONFIG_${o} is not set (or absent)"
+            done
+            echo "LOCALVERSION=$(grep -E '^CONFIG_LOCALVERSION=' .config || true)"
+          } | tee config-report.txt
+          grep -q '^CONFIG_KSU=y' .config || { echo "CONFIG_KSU is not enabled"; exit 1; }
+
+      - name: Build kernel Image
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64 LLVM=1
+          export CCACHE_DIR=$HOME/.ccache
+          ccache -M 3G || true
+          make -j"$(nproc)" CC="ccache clang" KCFLAGS="-Wno-error" Image 2>&1 | tee build.log
+          ls -lh arch/arm64/boot/Image
+
+      - name: Verify build result
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          test -s arch/arm64/boot/Image
+          file arch/arm64/boot/Image
+          sha256sum arch/arm64/boot/Image | tee Image.sha256
+          grep -cE 'error:' build.log || true
+
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image
-          path: kernel/arch/arm64/boot/Image
+          name: kernel-${{ github.run_number }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            kernel/arch/arm64/boot/Image
+            kernel/Image.sha256
+            kernel/.config
+            kernel/config-report.txt
+            kernel/build.log
