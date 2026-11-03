@@ -187,14 +187,15 @@ jobs:
           FLAGS="-Wno-error"
           : > include-fixes.log
           ok=0
+          df -h / > disk-before.txt || true
           for attempt in $(seq 1 25); do
             echo "===== attempt ${attempt}: KCFLAGS='${FLAGS}' ====="
             if make -j"$(nproc)" CC="ccache clang" KCFLAGS="$FLAGS" Image \
-                 > "build-attempt-${attempt}.log" 2>&1; then
+                 2>&1 | tee "build-attempt-${attempt}.log"; then
               ok=1; echo "build succeeded on attempt ${attempt}"; break
             fi
-            hdrs=$(grep -ohE "fatal error: '[^']+' file not found" "build-attempt-${attempt}.log" \
-                    | sed -E "s/.*'([^']+)'.*/\1/" | sort -u)
+            hdrs=$(grep -ohE "'[^']+' file not found" "build-attempt-${attempt}.log" \
+                    | sed -E "s/^'([^']+)' file not found$/\1/" | sort -u)
             if [ -z "${hdrs:-}" ]; then
               echo "::error::build failed without a missing-header diagnostic"
               tail -n 60 "build-attempt-${attempt}.log"
@@ -227,6 +228,7 @@ jobs:
               tail -n 60 "build-attempt-${attempt}.log"
               exit 1
             fi
+            df -h / | tail -n1
           done
           cp "build-attempt-${attempt}.log" build.log
           [ "$ok" -eq 1 ] || { echo "::error::no green build after ${attempt} attempts"; exit 1; }
