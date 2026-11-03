@@ -10,9 +10,14 @@ on:
         default: 'lineage-24.0'
         required: true
       ksu_ref:
-        description: 'KernelSU-Next commit/tag/branch (setup.sh arg)'
-        default: 'next'
-        required: true
+        description: 'KernelSU-Next commit/tag (empty = latest tag)'
+        default: ''
+        required: false
+      audiodsp:
+        description: 'Build MTK audiodsp code (published tree lacks mtk-base-afe.h/audio_type.h/dvfs.h)'
+        type: choice
+        options: ['false', 'true']
+        default: 'false'
       kabi_slots:
         description: 'DroidSpaces SYSVIPC kABI slot variant (auto = try 6_7_8, 3_4_5, 1_2_3)'
         default: 'auto'
@@ -70,12 +75,16 @@ jobs:
       - name: Setup KernelSU-Next
         working-directory: kernel
         env:
-          KSU_REF: ${{ inputs.ksu_ref || 'next' }}
+          KSU_REF: ${{ inputs.ksu_ref }}
         run: |
           set -euo pipefail
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/${KSU_REF}/kernel/setup.sh" \
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" \
             -o /tmp/ksu-setup.sh
-          bash /tmp/ksu-setup.sh "${KSU_REF}"
+          if [ -n "${KSU_REF:-}" ]; then
+            bash /tmp/ksu-setup.sh "${KSU_REF}"
+          else
+            bash /tmp/ksu-setup.sh
+          fi
           test -d drivers/kernelsu || { echo "KernelSU tree not linked"; exit 1; }
           grep -q 'kernelsu' drivers/Makefile
           grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig
@@ -114,23 +123,33 @@ jobs:
           fi
           echo "KABI_VARIANT=${applied:-none}" >> "$GITHUB_ENV"
 
-      - name: Fix same-directory include path for audio_dsp/v2
+      - name: Fix same-directory include paths
         working-directory: kernel
+        env:
+          AUDIODSP: ${{ inputs.audiodsp || 'false' }}
         run: |
           set -euo pipefail
           F=sound/soc/mediatek/audio_dsp/v2/Makefile
           grep -qF 'I$(srctree)/sound/soc/mediatek/audio_dsp/v2' "$F" || \
             echo 'ccflags-y += -I$(srctree)/sound/soc/mediatek/audio_dsp/v2' >> "$F"
-          tail -n3 "$F"
+          if [ "$AUDIODSP" = "true" ]; then
+            A=drivers/misc/mediatek/adsp/mt6853/Makefile
+            grep -qF 'I$(srctree)/drivers/misc/mediatek/adsp/$(ADSP_PLATFORM)' "$A" || \
+              echo 'ccflags-y += -I$(srctree)/drivers/misc/mediatek/adsp/$(ADSP_PLATFORM)' >> "$A"
+          fi
 
       - name: Configure (ruby_defconfig + DroidSpaces + KSU)
         working-directory: kernel
         env:
           LOCALVERSION_INPUT: ${{ inputs.localversion }}
+          AUDIODSP: ${{ inputs.audiodsp || 'false' }}
         run: |
           set -euo pipefail
           export ARCH=arm64 LLVM=1
           make ruby_defconfig
+          if [ "$AUDIODSP" != "true" ]; then
+            ./scripts/config --file .config -d MTK_AUDIODSP_SUPPORT -d SND_SOC_MTK_AUDIO_DSP
+          fi
           ./scripts/config --file .config \
             -e SYSCTL -e SYSVIPC -e POSIX_MQUEUE \
             -e NAMESPACES -e PID_NS -e UTS_NS -e IPC_NS -e NET_NS -e USER_NS \
@@ -150,7 +169,8 @@ jobs:
           {
             for o in KSU SYSVIPC POSIX_MQUEUE IPC_NS PID_NS USER_NS UTS_NS NET_NS \
                      DEVTMPFS SECCOMP SECCOMP_FILTER OVERLAY_FS VETH BRIDGE TUN \
-                     MACVLAN CGROUP_DEVICE CGROUP_PIDS CFS_BANDWIDTH MEMCG WERROR; do
+                     MACVLAN CGROUP_DEVICE CGROUP_PIDS CFS_BANDWIDTH MEMCG WERROR \
+                     MTK_AUDIODSP_SUPPORT SND_SOC_MTK_AUDIO_DSP; do
               grep -E "^CONFIG_${o}=" .config || echo "# CONFIG_${o} is not set (or absent)"
             done
             echo "LOCALVERSION=$(grep -E '^CONFIG_LOCALVERSION=' .config || true)"
