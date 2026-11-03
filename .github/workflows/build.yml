@@ -50,17 +50,20 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p drivers/misc/mediatek/adsp/include sound/soc/mediatek/audio_dsp/v2
-          cp -f drivers/misc/mediatek/adsp/mt6853/adsp_helper.h drivers/misc/mediatek/adsp/include/adsp_helper.h
-          cp -f drivers/misc/mediatek/adsp/mt6853/adsp_helper.h drivers/misc/mediatek/adsp/common_v2/adsp_helper.h
-          cp -f drivers/misc/mediatek/adsp/mt6853/mtk-dsp-mem-control.h drivers/misc/mediatek/adsp/common_v2/ 2>/dev/null || true
-          cp -f drivers/misc/mediatek/adsp/mt6853/mtk-base-dsp.h sound/soc/mediatek/audio_dsp/v2/ 2>/dev/null || true
-          cp -f drivers/misc/mediatek/adsp/mt6853/mtk-dsp-common.h sound/soc/mediatek/audio_dsp/v2/ 2>/dev/null || true
-          find sound/soc/mediatek -name 'mtk-base-dsp.h' | xargs -I{} sh -c 'dir=$(dirname {}); cp -f {} $dir/../v2/ 2>/dev/null || true'
-          find sound/soc/mediatek -name 'mtk-dsp-common.h' | xargs -I{} sh -c 'dir=$(dirname {}); cp -f {} $dir/../v2/ 2>/dev/null || true'
-          sed -i 's|#include <adsp_helper.h>|#include "adsp_helper.h"|g' drivers/misc/mediatek/adsp/common_v2/adsp_core.h drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/*.h drivers/misc/mediatek/adsp/include/ 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/*.h drivers/misc/mediatek/adsp/common_v2/ 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/*.h drivers/misc/mediatek/adsp/ 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/*.c drivers/misc/mediatek/adsp/common_v2/ 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/*.h sound/soc/mediatek/audio_dsp/v2/ 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/*.h sound/soc/mediatek/audio_dsp/ 2>/dev/null || true
+          find drivers/misc/mediatek/adsp/mt6853 -name '*.h' -exec sh -c 'cp -f "$1" "$(dirname "$1")/../common_v2/$(basename "$1")"' _ {} \; 2>/dev/null || true
+          echo 'subdir-ccflags-y += -Idrivers/misc/mediatek/adsp/mt6853 -Idrivers/misc/mediatek/adsp/common_v2 -Idrivers/misc/mediatek/adsp' >> drivers/misc/mediatek/adsp/common_v2/Makefile
+          echo 'ccflags-y += -Idrivers/misc/mediatek/adsp/mt6853 -Idrivers/misc/mediatek/adsp/common_v2 -Idrivers/misc/mediatek/adsp' >> drivers/misc/mediatek/adsp/Makefile
+          sed -i 's|#include <adsp_helper.h>|#include "adsp_helper.h"|g' drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
+          sed -i 's|#include <adsp_reserved_mem.h>|#include "adsp_reserved_mem.h"|g' drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
           sed -i 's|#include <mtk-dsp-mem-control.h>|#include "mtk-dsp-mem-control.h"|g' drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
-          sed -i 's|#include <mtk-base-dsp.h>|#include "mtk-base-dsp.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h 2>/dev/null || true
-          sed -i 's|#include <mtk-dsp-common.h>|#include "mtk-dsp-common.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h 2>/dev/null || true
+          sed -i 's|#include <mtk-base-dsp.h>|#include "mtk-base-dsp.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h sound/soc/mediatek/audio_dsp/*.c sound/soc/mediatek/audio_dsp/*.h 2>/dev/null || true
+          sed -i 's|#include <mtk-dsp-common.h>|#include "mtk-dsp-common.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h sound/soc/mediatek/audio_dsp/*.c sound/soc/mediatek/audio_dsp/*.h 2>/dev/null || true
 
       - name: Configure and build
         working-directory: kernel
@@ -75,7 +78,7 @@ jobs:
           export CC="ccache clang"
           export HOSTCC="ccache gcc"
           DEFCONFIG=arch/arm64/configs/ruby_defconfig
-          for opt in CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE CONFIG_IPC_NS CONFIG_PID_NS CONFIG_DEVTMPFS CONFIG_USER_NS CONFIG_UTS_NS CONFIG_SECCOMP CONFIG_SECCOMP_FILTER CONFIG_MEMCG CONFIG_MEMCG_SWAP CONFIG_OVERLAY_FS CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE CONFIG_TUN CONFIG_KSU CONFIG_FUSE_FS CONFIG_BLK_DEV_LOOP CONFIG_EXT4_FS CONFIG_IPV6 CONFIG_MACVLAN CONFIG_NETFILTER_XT_MATCH_ADDRTYPE CONFIG_IP6_NF_NAT CONFIG_IP6_NF_TARGET_MASQUERADE CONFIG_NETFILTER_XT_TARGET_REJECT CONFIG_NETFILTER_XT_TARGET_LOG CONFIG_NETFILTER_XT_MATCH_RECENT CONFIG_IP_SET CONFIG_IP_SET_HASH_IP CONFIG_IP_SET_HASH_NET CONFIG_NETFILTER_XT_SET CONFIG_TMPFS_POSIX_ACL CONFIG_TMPFS_XATTR; do
+          for opt in CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE CONFIG_IPC_NS CONFIG_PID_NS CONFIG_DEVTMPFS CONFIG_USER_NS CONFIG_UTS_NS CONFIG_SECCOMP CONFIG_SECCOMP_FILTER CONFIG_MEMCG CONFIG_MEMCG_SWAP CONFIG_OVERLAY_FS CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE CONFIG_TUN CONFIG_KSU CONFIG_FUSE_FS CONFIG_BLK_DEV_LOOP CONFIG_EXT4_FS CONFIG_IPV6 CONFIG_MACVLAN CONFIG_NETFILTER_XT_MATCH_ADDRTYPE CONFIG_IP6_NF_NAT CONFIG_IP6_NF_TARGET_MASQUERADE CONFIG_NETFILTER_XT_TARGET_REJECT CONFIG_NETFILTER_XT_TARGET_LOG CONFIG_NETFILTER_XT_MATCH_RECENT CONFIG_IP_SET CONFIG_IP_SET_HASH_IP CONFIG_IP_SET_HASH_NET CONFIG_NETFILTER_XT_SET CONFIG_TMPFS_POSIX_ACL CONFIG_TMPFS_XATTR CONFIG_CGROUP_DEVICE CONFIG_CGROUP_SCHED CONFIG_FAIR_GROUP_SCHED CONFIG_CGROUP_FREEZER CONFIG_CGROUP_NET_PRIO; do
             sed -i "s|# $opt is not set|$opt=y|" "$DEFCONFIG"
             grep -q "^$opt=" "$DEFCONFIG" || echo "$opt=y" >> "$DEFCONFIG"
           done
