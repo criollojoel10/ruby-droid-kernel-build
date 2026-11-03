@@ -26,6 +26,10 @@ on:
         description: 'CONFIG_LOCALVERSION suffix (empty = kernel default)'
         default: ''
         required: false
+      expected_release:
+        description: 'Required kernel release string (vermagic prefix)'
+        default: '6.6.143-android15-8-4k-Singularity-gbe1aa8ecec91'
+        required: false
 
 concurrency:
   group: kernel-${{ github.ref }}
@@ -197,6 +201,21 @@ jobs:
           } | tee config-report.txt
           grep -q '^CONFIG_KSU=y' .config || { echo "CONFIG_KSU is not enabled"; exit 1; }
 
+      - name: Pin kernel release string (no -dirty)
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          # scripts/setlocalversion appends -dirty because CI patches tracked files.
+          # The ROM kernel is 6.6.143-android15-8-4k-Singularity-gbe1aa8ecec91 with no
+          # -dirty suffix, and module loading needs an exact vermagic match.
+          sed -i "s/printf '%s' -dirty/:/" scripts/setlocalversion
+          if grep -q "printf '%s' -dirty" scripts/setlocalversion; then
+            echo "::error::could not neutralise the -dirty suffix"
+            exit 1
+          fi
+          echo "git HEAD (used for -g<hash>): $(git rev-parse --short=12 HEAD)"
+          echo "localversion file: $(cat localversion)"
+
       - name: Build kernel Image (self-healing includes)
         working-directory: kernel
         run: |
@@ -256,12 +275,22 @@ jobs:
 
       - name: Verify build result
         working-directory: kernel
+        env:
+          EXPECTED_RELEASE: ${{ inputs.expected_release || '6.6.143-android15-8-4k-Singularity-gbe1aa8ecec91' }}
         run: |
           set -euo pipefail
           test -s arch/arm64/boot/Image
           file arch/arm64/boot/Image
           sha256sum arch/arm64/boot/Image | tee Image.sha256
           echo "include dirs added: $(wc -l < include-fixes.log || echo 0)"
+          release=$(strings -a arch/arm64/boot/Image | grep -m1 -E '^6\.[0-9]+\.[0-9]+[^ ]* SMP' | sed 's/ SMP.*//')
+          echo "built release:    ${release}"
+          echo "expected release: ${EXPECTED_RELEASE}"
+          echo "RELEASE=${release}" >> "$GITHUB_ENV"
+          if [ "$release" != "$EXPECTED_RELEASE" ]; then
+            echo "::error::kernel release '$release' does not match the ROM '$EXPECTED_RELEASE'"
+            exit 1
+          fi
 
       - name: Upload artifacts
         if: always()
