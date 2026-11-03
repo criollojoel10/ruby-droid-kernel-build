@@ -50,17 +50,17 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p drivers/misc/mediatek/adsp/include sound/soc/mediatek/audio_dsp/v2
-          echo '#ifndef ADSP_HELPER_H' > drivers/misc/mediatek/adsp/include/adsp_helper.h
-          echo '#define ADSP_HELPER_H' >> drivers/misc/mediatek/adsp/include/adsp_helper.h
-          echo '#endif' >> drivers/misc/mediatek/adsp/include/adsp_helper.h
-          cp -f drivers/misc/mediatek/adsp/include/adsp_helper.h drivers/misc/mediatek/adsp/common_v2/adsp_helper.h 2>/dev/null || true
-          find drivers/misc/mediatek -name 'adsp_helper.h' -not -path '*/adsp/common_v2/*' | xargs -I{} cp -f {} drivers/misc/mediatek/adsp/common_v2/ 2>/dev/null || true
-          find drivers/misc/mediatek -name 'mtk-dsp-mem-control.h' -exec cp -f {} drivers/misc/mediatek/adsp/common_v2/ \; 2>/dev/null || true
-          find drivers/misc/mediatek -name 'mtk-base-dsp.h' -exec cp -f {} sound/soc/mediatek/audio_dsp/v2/ \; 2>/dev/null || true
-          find drivers/misc/mediatek -name 'mtk-dsp-common.h' -exec cp -f {} sound/soc/mediatek/audio_dsp/v2/ \; 2>/dev/null || true
-          find . -name 'adsp_helper.h' -not -path '*/adsp/common_v2/*' | xargs -I{} sh -c 'grep -rl "#include.*adsp_helper" drivers/misc/mediatek/adsp/common_v2 2>/dev/null | xargs -I$ sed -i "s|#include.*adsp_helper.h|#include \"adsp_helper.h\"|g" $' 2>/dev/null || true
-          find sound/soc/mediatek/audio_dsp/v2 -name '*.c' -o -name '*.h' | xargs -I{} sed -i 's|#include <mtk-base-dsp.h>|#include "mtk-base-dsp.h"|g' {} 2>/dev/null || true
-          find sound/soc/mediatek/audio_dsp/v2 -name '*.c' -o -name '*.h' | xargs -I{} sed -i 's|#include <mtk-dsp-common.h>|#include "mtk-dsp-common.h"|g' {} 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/adsp_helper.h drivers/misc/mediatek/adsp/include/adsp_helper.h
+          cp -f drivers/misc/mediatek/adsp/mt6853/adsp_helper.h drivers/misc/mediatek/adsp/common_v2/adsp_helper.h
+          cp -f drivers/misc/mediatek/adsp/mt6853/mtk-dsp-mem-control.h drivers/misc/mediatek/adsp/common_v2/ 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/mtk-base-dsp.h sound/soc/mediatek/audio_dsp/v2/ 2>/dev/null || true
+          cp -f drivers/misc/mediatek/adsp/mt6853/mtk-dsp-common.h sound/soc/mediatek/audio_dsp/v2/ 2>/dev/null || true
+          find sound/soc/mediatek -name 'mtk-base-dsp.h' | xargs -I{} sh -c 'dir=$(dirname {}); cp -f {} $dir/../v2/ 2>/dev/null || true'
+          find sound/soc/mediatek -name 'mtk-dsp-common.h' | xargs -I{} sh -c 'dir=$(dirname {}); cp -f {} $dir/../v2/ 2>/dev/null || true'
+          sed -i 's|#include <adsp_helper.h>|#include "adsp_helper.h"|g' drivers/misc/mediatek/adsp/common_v2/adsp_core.h drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
+          sed -i 's|#include <mtk-dsp-mem-control.h>|#include "mtk-dsp-mem-control.h"|g' drivers/misc/mediatek/adsp/common_v2/*.c drivers/misc/mediatek/adsp/common_v2/*.h 2>/dev/null || true
+          sed -i 's|#include <mtk-base-dsp.h>|#include "mtk-base-dsp.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h 2>/dev/null || true
+          sed -i 's|#include <mtk-dsp-common.h>|#include "mtk-dsp-common.h"|g' sound/soc/mediatek/audio_dsp/v2/*.c sound/soc/mediatek/audio_dsp/v2/*.h 2>/dev/null || true
 
       - name: Configure and build
         working-directory: kernel
