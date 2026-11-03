@@ -183,7 +183,6 @@ jobs:
             -e OVERLAY_FS -e TMPFS_XATTR -e TMPFS_POSIX_ACL \
             -e EXT4_FS_POSIX_ACL -e EXT4_FS_SECURITY \
             -e VETH -e MACVLAN -e BRIDGE -e BRIDGE_NETFILTER -e TUN \
-            -e IP6_NF_NAT -e IP6_NF_TARGET_MASQUERADE \
             -e KSU -d WERROR
           if [ -n "${LOCALVERSION_INPUT:-}" ]; then
             ./scripts/config --file .config --set-str LOCALVERSION "$LOCALVERSION_INPUT"
@@ -194,7 +193,6 @@ jobs:
             for o in KSU SYSVIPC POSIX_MQUEUE IPC_NS PID_NS USER_NS UTS_NS NET_NS \
                      DEVTMPFS SECCOMP SECCOMP_FILTER OVERLAY_FS VETH BRIDGE TUN \
                      MACVLAN CGROUP_DEVICE CGROUP_PIDS CFS_BANDWIDTH MEMCG WERROR \
-                     IP6_NF_NAT IP6_NF_TARGET_MASQUERADE \
                      MTK_AUDIODSP_SUPPORT SND_SOC_MTK_AUDIO_DSP; do
               grep -E "^CONFIG_${o}=" .config || echo "# CONFIG_${o} is not set (or absent)"
             done
