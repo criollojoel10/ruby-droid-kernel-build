@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       kernel_ref:
-        description: 'RubyxLabs/android_kernel_xiaomi_mt6877 ref'
-        default: 'lineage-24.0'
+        description: 'RubyxLabs/android_kernel_xiaomi_mt6877 ref (pinned to the ROM commit for vermagic parity)'
+        default: 'be1aa8ecec91d1793024db1d7a88e621b74e633e'
         required: true
       ksu_ref:
         description: 'KernelSU-Next commit/tag (empty = latest tag)'
@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: RubyxLabs/android_kernel_xiaomi_mt6877
-          ref: ${{ inputs.kernel_ref || 'lineage-24.0' }}
+          ref: ${{ inputs.kernel_ref || 'be1aa8ecec91d1793024db1d7a88e621b74e633e' }}
           path: kernel
           fetch-depth: 1
 
@@ -71,9 +71,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-kernel-${{ inputs.kernel_ref || 'lineage-24.0' }}-${{ github.sha }}
+          key: ccache-kernel-${{ inputs.kernel_ref || 'be1aa8ecec91d1793024db1d7a88e621b74e633e' }}-${{ github.sha }}
           restore-keys: |
-            ccache-kernel-${{ inputs.kernel_ref || 'lineage-24.0' }}-
+            ccache-kernel-${{ inputs.kernel_ref || 'be1aa8ecec91d1793024db1d7a88e621b74e633e' }}-
+            ccache-kernel-
             ccache-kernel-
 
       - name: Setup KernelSU-Next
