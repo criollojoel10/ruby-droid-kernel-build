@@ -231,7 +231,7 @@ jobs:
           df -h / > disk-before.txt || true
           for attempt in $(seq 1 25); do
             echo "===== attempt ${attempt}: KCFLAGS='${FLAGS}' ====="
-            if make -j"$(nproc)" CC="ccache clang" KCFLAGS="$FLAGS" Image \
+            if make -j"$(nproc)" CC="ccache clang" KCFLAGS="$FLAGS" Image modules \
                  2>&1 | tee "build-attempt-${attempt}.log"; then
               ok=1; echo "build succeeded on attempt ${attempt}"; break
             fi
