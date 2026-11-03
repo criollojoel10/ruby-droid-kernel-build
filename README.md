@@ -23,9 +23,9 @@ Bootable kernel builds for the **Redmi Note 12 Pro / Pro+ 5G / Discovery Edition
 - **vbmeta (stock)**: https://drive.google.com/open?id=1GTctpuZ6mMH7woC2Wb812jdNtpvpDMfd
 - **Raw Image**: https://drive.google.com/open?id=1PdotuRdrOswusBQLQ0FD89mGhaYIFSFj (see folder `ruby-kernel-ksu-droidspaces`)
 
-A new build with **IPv6 NAT** enabled (`CONFIG_IP6_NF_NAT` +
-`CONFIG_IP6_NF_TARGET_MASQUERADE`) is being produced; the link above will be
-updated once it passes CI.
+The current build enables **IPv6 NAT** (`CONFIG_IP6_NF_NAT=y` and
+`CONFIG_IP6_NF_TARGET_MASQUERADE=y`), so `--net=nat` containers get IPv6 too.
+Build run: https://github.com/criollojoel10/ruby-droid-kernel-build/actions/runs/41656352913
 
 ## Flashing
 
